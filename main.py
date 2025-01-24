@@ -1,4 +1,6 @@
 import csv
+import nltk
+from nltk.tokenize import TweetTokenizer
 from components import pipeline
 
 MODEL = "llama3.2:latest"  # "llama3.2:latest"ollama run nemotron-mini
@@ -91,7 +93,7 @@ If you cannot answer the question say 'NA'
 ONLY RETURN THE JSON REQUESTED AND NOTHING ELSE
 
 """
-
+tokenizer_words = TweetTokenizer()
 p = pipeline.ReviewDatasetPipeline(model=MODEL, template=template)
 results = []
 with open("./data/test.csv", mode="r") as file:
@@ -105,13 +107,16 @@ with open("./data/test.csv", mode="r") as file:
     for row in csv_reader:
         if count < 5:
             text = row["text"]
-            result = p.run(text=text, query=query)
-            if isinstance(result, list):
+            sentences = [tokenizer_words.tokenize(t) for t in nltk.sent_tokenize(text)]
+            for sentence in sentences:
+                sentence = " ".join(sentence)
+                result = p.run(text=sentence, query=query)
+                if isinstance(result, list):
 
-                results.append(result[0])
-            count += 1
-            print(text)
-            print(count)
+                    results.append(result[0])
+                count += 1
+                print(sentence)
+                print(count)
 
 
 print(f"Number of results = {len(results)}")
