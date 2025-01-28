@@ -1,67 +1,28 @@
 import csv
+import json
+from typing import List
 import nltk
-from nltk.tokenize import TweetTokenizer
-from components import pipeline
+import pandas as pd
 
-MODEL = "llama3.2:latest"  # "llama3.2:latest"ollama run nemotron-mini
-FILE_PATH = "./data/data.csv"
-template = """  
-Give the following information, answer the question from the information present in this text: {{text}}.
-Ignore your own knwoledge. If you do not have an answer reply 'NA'
-Question={{query}}?
-"""
-# query = """
-# Determine if the text contains a sentiment about the following,
-# hotel location,
-# hotel room.
-# Format your response as a JSON object with the following keys,
-# 'location',
-# 'location_sentiment',
-# 'room',
-# 'room_sentiment',
-# 'cleaning',
-# 'cleaning_sentiment',
-# 'food',
-# 'food_sentiment'
-# 'staff_service',
-# 'staff_service_sentiment'
-# 'cost',
-# 'cost_sentiment',
-# 'facilities',
-# 'facilities_sentiment',
-# 'bed',
-# 'bed_sentiment',
-# 'wifi',
-# 'wifi_sentiment',
-# 'noise',
-# 'noise_sentiment',
-# 'anger_sentiment'
-# Any sentiment should be either 'positive', 'neutral' or 'negative'.
-# The location key value will be the comment about the location of the hotel and nothing else.
-# The location_sentiment key value will be the sentiment of the comment about the location of the hotel and nothing else.
-# The room key value will be the comment about the room and nothing else.
-# The room_sentiment key value will be the sentiment of the comment about the room and nothing else.
-# The cleaning key value will be the comment about any dirt, dirty, soiled, filth, unitidiness, unclean, lack or hygiene, stains in the hotel and nothing else.
-# The cleaning_sentiment key value will be the sentiment about any dirt, dirty, soiled, filth, unitidiness, unclean, lack or hygiene, stains  in the hotel and nothing else.
-# The food key value will be the comment about the food and nothing else.
-# The food_sentiment key value will be the sentiment of the comment about the food and nothing else.
-# The staff_service key value will be the comment about the any staff members and nothing else.
-# The staff_service_sentiment key value will be the sentiment of the comment about the staff and nothing else.
-# The cost key value will be the comment about the price of room or cost of hotel but not about any prices of things outside the hotel and nothing else.
-# The cost_sentiment key value will be the sentiment of the price of room and or cost of hotel and nothing else.
-# The facilities key value will be the comment about the hotel facilities such as elevator, lift, terrace, jacuzzi, ice machine, sauna, shuttle buses, parking parking area, gym, gymnasium, fitness suite, swimming pool, pool, public area.
-# The facilities_sentiment key value will be the sentiment of the hotel facilities such as shuttle buses, parking area, gym, swimming pool, public area.
-# The bed key value will be the sentence which must contain the word the words  'bed' or 'beds' or 'duvet' or 'sheet' or 'sheets' or 'mattress' or 'blankets' or 'pillows'  and nothing else otherwise the bed key value is 'unknown'.
-# The bed_sentiment key value will be the sentiment of sentence which must contain the word  'bed' or 'beds' or 'pillow menu' or 'duvet' or 'sheet' or 'sheets' or 'mattress' or 'blankets' or 'pillows'  and nothing else. otherwise the bed_sentiment  key value is 'neutral'.
-# The wifi key value will be the comment about wifi or internet used in hotel and nothing else.
-# The wifi_sentiment key value will be the sentiment about wifi or internet used in hotel and nothing else.
-# The noise key value will be the sentence containing the words 'noise' or 'noisy'  and nothing else.
-# The noise_sentiment key value will be 'negative' if the sentence contains the words 'noise' or 'noisy'  otherwise it will be 'neutral'.
-# The anger_sentiment key value will be the true if the tone  or sentiment of the {{text}} is angry and false if not.
-# If the information isn't present, use 'unknown' as the value.
-# If the sentiment is isn't present use 'neutral' as the value.
-# Just return the JSON object as the answer.
-# """
+from nltk.tokenize import TweetTokenizer
+from guardrails import Guard
+from pydantic import BaseModel, Field
+from guardrails.hub import RegexMatch
+
+from components import pipeline, struct_logger
+from validators import input_validator
+
+TOPIC_REGEX = "^\w+(_\w+)?$"
+COMMENT_REGEX = "\w+"
+SENTIMENT_REGEX = "^(positive|negative|neutral)+$"
+
+MODEL = "llama3.2:latest"
+DATA_FILE_PATH = "./data/small_test.csv"
+LOG_FILE_PATH = "./logs/app_logs.jsonl"
+RESULTS_FILE_PATH = "./data/results"
+
+
+logger = struct_logger.create_logger(LOG_FILE_PATH)
 
 query = """
 List the topics contained in the text provided. 
@@ -93,35 +54,51 @@ If you cannot answer the question say 'NA'
 ONLY RETURN THE JSON REQUESTED AND NOTHING ELSE
 
 """
+
 tokenizer_words = TweetTokenizer()
 p = pipeline.ReviewDatasetPipeline(model=MODEL, template=template)
 results = []
-with open("./data/test.csv", mode="r") as file:
-    # Create a CSV reader object
-    csv_reader = csv.DictReader(file)
 
-    # Skip the header row (if there is one)
-    next(csv_reader, None)
-    count = 0
-    # Iterate over each row in the CSV file
-    for row in csv_reader:
-        if count < 5:
-            text = row["text"]
-            sentences = [tokenizer_words.tokenize(t) for t in nltk.sent_tokenize(text)]
-            for sentence in sentences:
-                sentence = " ".join(sentence)
-                result = p.run(text=sentence, query=query)
-                if isinstance(result, list):
-
-                    results.append(result[0])
-                count += 1
-                print(sentence)
-                print(count)
+input_guard = Guard().use(input_validator.InputValidator(on_fail="exception"))
 
 
-print(f"Number of results = {len(results)}")
+class JSON_RESPONSE(BaseModel):
+    topic: str = Field(validators=[RegexMatch(regex=TOPIC_REGEX)])
+    comment: str = Field(validators=[RegexMatch(regex=COMMENT_REGEX)])
+    sentiment: str = Field(validators=[RegexMatch(regex=SENTIMENT_REGEX)])
 
-if len(results) > 0:
-    with open(f"./data/results/upated_review_dataset_{MODEL}.json", "w") as file:
-        for entry in results:
-            file.write(entry)
+
+output_guard = Guard.for_pydantic(JSON_RESPONSE)
+
+
+def process_row(values, df_index):
+    [text, id, post_date] = values
+    sentences = [tokenizer_words.tokenize(t) for t in nltk.sent_tokenize(text)]
+    for sentence in sentences:
+        sentence = " ".join(sentence)
+        try:
+            input_guard.validate(sentence, metadata={"index": df_index})
+            best_result = p.run(text=sentence, query=query)[0]
+            print(best_result, type(best_result))
+
+            # output_guard.validate(json.loads(str(best_result)))
+            # write_to_file(best_result)
+        except Exception as e:
+            print(e)
+            logger.error(f"Error:{e}", status="failed validation", id=id, text=text)
+
+
+def write_to_file(
+    results: List[JSON_RESPONSE], file_path=RESULTS_FILE_PATH, file_type="jsonl"
+):
+    print(f"write to file {results}")
+    if len(results) > 0:
+        with open(f"{file_path}_{MODEL}.{file_type}", "a") as file:
+            file.write(results + "\n")
+
+
+df = pd.read_csv(DATA_FILE_PATH)[["text", "hotel_id", "post_date"]]
+df.apply(
+    lambda row: process_row(values=row.values, df_index=df.index),
+    axis=1,
+)
