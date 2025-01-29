@@ -3,6 +3,7 @@ import json
 from typing import List
 import nltk
 import pandas as pd
+import numpy as np
 
 from nltk.tokenize import TweetTokenizer
 from guardrails import Guard, OnFailAction
@@ -49,7 +50,7 @@ output_guard = Guard().use(
 )
 
 
-def process_row(values, df_index):
+def process_row(values: np.ndarray, df_index: pd.RangeIndex):
     [text, id, post_date] = values
     output_metadata = {"id": id, "post_date": post_date}
 
@@ -68,7 +69,9 @@ def process_row(values, df_index):
             logger.error(f"Error:{e}", status="failed validation", id=id, text=text)
 
 
-def write_to_file(result: dict, file_path=RESULTS_FILE_PATH, file_type="jsonl"):
+def write_to_file(
+    result: dict, file_path: str = RESULTS_FILE_PATH, file_type: str = "jsonl"
+):
     with open(f"{file_path}_{MODEL}.{file_type}", "a") as file:
         file.write(result + "\n")
 
