@@ -26,8 +26,9 @@ class OutputValidatior(Validator):
     def _validate(self, value: str, metadata: Dict[str, Any] = {}) -> ValidationResult:
 
         try:
-            output_dict = json.loads(value)
-            self.pydantic_model.model_validate(output_dict)
+            value_dict = json.loads(value)
+            value_dict.update(metadata)
+            self.pydantic_model.model_validate(value_dict)
             return PassResult()
         except ValidationError as ve:
             return self.error(message=f"Pydantic Validation failed: {ve}")
