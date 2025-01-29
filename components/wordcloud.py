@@ -1,10 +1,12 @@
 import re
+from typing import Dict, List
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 
-def create_wordcloud(vocab):
+# TfidfVectorizer().vocabulary_
+def create_wordcloud(vocab: Dict):
 
     wordcloud = WordCloud(
         width=800, height=400, background_color="white"
@@ -16,9 +18,9 @@ def create_wordcloud(vocab):
     plt.show()
 
 
-def clean_text(text):
+def clean_text(text: str):
     return " ".join([i for i in text if i.isalpha()])
 
 
-def create_vocab(topics):
+def create_vocab(topics: List[str]):
     return TfidfVectorizer().fit_transform(topics)
