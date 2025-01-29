@@ -1,5 +1,5 @@
 # LLM_topic_modelling
-A project to look into topic modelling using LLM exclusively. Given growth of online social network platforms and application, finding topic modelling approaches that handle these types of sorpus effectively ould be useful.
+A project to look into topic modelling using LLM exclusively. Given growth of online social network platforms and data arising from them, finding topic modelling approaches that handle these types of sorpus effectively ould be useful.
 
 #### Description
 Topic modeling can become a competitive advantage for organisations, seeking to utilize NLP techniques for improved understanding of their customers or processes and use such data for predictive analysis, opinion monitoring or trend analysis.
